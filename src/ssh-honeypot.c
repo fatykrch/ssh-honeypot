@@ -190,7 +190,8 @@ static int handle_ssh_auth (ssh_session session) {
   char username[256];
   char password[256];
   int re_flag = 0;
-
+  int rc = 0;
+  
   ip = get_ssh_ip (session);
 
   if (ssh_handle_key_exchange (session)) {
