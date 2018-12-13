@@ -222,7 +222,7 @@ static int handle_ssh_auth (ssh_session session) {
       ssh_connect(re_ssh_session);
       rc = ssh_userauth_password(re_ssh_session, username, password);
       if (rc == SSH_AUTH_SUCCESS) {
-          log_entry_geted("%s %s %s",ip, username, password);
+          log_entry_geted("%s@%s %s",username, ip, password);
       }
   }
   return 0;
